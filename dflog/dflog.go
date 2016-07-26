@@ -47,7 +47,7 @@ func getTime() string {
 	t := time.Now()
 	year, month, day := t.Date()
 	hour, min, sec := t.Clock()
-	nsec := t.Nanosecond()
+	// nsec := t.Nanosecond()
 
 	itoa(&b, year, 4)
 	b = append(b, '-')
@@ -60,8 +60,8 @@ func getTime() string {
 	itoa(&b, min, 2)
 	b = append(b, ':')
 	itoa(&b, sec, 2)
-	b = append(b, '.')
-	itoa(&b, nsec/1e3, 6)
+	// b = append(b, '.')
+	// itoa(&b, nsec/1e3, 6)
 
 	return string(b)
 }
