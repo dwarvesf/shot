@@ -1,8 +1,13 @@
 package main
 
 import (
+	"fmt"
+	"io/ioutil"
 	"os"
+	"strconv"
+	"strings"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/dwarvesf/shot/config"
 	"github.com/dwarvesf/shot/dflog"
 	"github.com/dwarvesf/shot/ssh"
@@ -43,6 +48,68 @@ func main() {
 		SetupTarget(*setupPath)
 
 	case deploy.FullCommand():
+		logrus.Info("Reading config file...")
+		conf, err := config.Init(c.String("config"))
+		if err != nil {
+			logrus.Fatal(err)
+		}
+
+		for _, b := range conf.Project.Branches {
+			gco := fmt.Sprintf("git checkout %s", b)
+			image := fmt.Sprintf("%s/%s:%s", conf.Registry, conf.Project.Name, strings.Replace(b, "/", "-", -1))
+			dBuild := fmt.Sprintf("docker build -t %s .", image)
+			dPush := fmt.Sprintf("docker push %s", image)
+
+			// run cmd in local to build and push docker
+			cmds := []string{gco, dBuild, dPush}
+			for _, c := range cmds {
+				execCMD(c)
+			}
+
+			for _, t := range conf.Targets {
+				availablePort, err := ssh.Run("cat /opt/shot/port", ssh.Credential{
+					User: t.User,
+					Host: t.Host,
+					Port: t.Port,
+				})
+				if err != nil {
+					logrus.WithError(err).Error("Cannot read file port from server")
+					continue
+				}
+				port, err := strconv.Atoi(strings.TrimSpace(availablePort))
+				if err != nil {
+					logrus.WithError(err).Error("Cannot convert port to int")
+					continue
+				}
+
+				dPull := fmt.Sprintf("docker pull %s", image)
+				dRun := fmt.Sprintf("docker run -d -p %s:%d %s", availablePort, conf.Project.Port, image)
+				cmds := []string{dPull, dRun}
+				for _, cmd := range cmds {
+					_, err := ssh.Run(cmd, ssh.Credential{
+						User: t.User,
+						Host: t.Host,
+						Port: t.Port,
+					})
+					if err != nil {
+						break
+					}
+				}
+
+				// copy new port to target and remove file port from localhost
+				p := []byte(strconv.Itoa(port + 1))
+				err = ioutil.WriteFile("port", p, 0644)
+				if err != nil {
+					logrus.WithError(err).Error("Cannot write port to file")
+					continue
+				}
+				execCMD(fmt.Sprintf("scp port %s@%s:/opt/shot/port", t.User, t.Host))
+				err = os.Remove("port")
+				if err != nil {
+					logrus.WithError(err).Error("Cannot remove file port")
+				}
+			}
+		}
 
 	case down.FullCommand():
 

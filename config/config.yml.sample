@@ -2,26 +2,29 @@ targets:
   - host: 161.212.180.41
     port: 22
     user: root
-    branch:
+    branches:
       - feature/login
       - feature/register
-  - host: play.dwarvesf.com
+  - host: sample.dwarvesf.com
     port: 22
     user: root
-    branch:
+    branches:
       - feature/listing
 
 project:
   name: amio/api
-  seed: sql/seed.sql
+  database:
+    name: db
+    user: postgres
+    password: postgres
+    seed: sql/seed.sql
   port: 8080
 
 notification:
   slacks:
-  - https://hooks.slack.com/services/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
+    - https://hooks.slack.com/services/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
     - https://hooks.slack.com/services/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
   emails:
-    - ivkeanle@dwarvesf.com
-    - han@dwarvesf.com
+    - hiring@dwarvesf.com
 
 registry: hub.docker.com
