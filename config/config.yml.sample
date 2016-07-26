@@ -21,10 +21,14 @@ project:
   port: 8080
 
 notification:
-  slacks:
-    - https://hooks.slack.com/services/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
-    - https://hooks.slack.com/services/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
-  emails:
-    - hiring@dwarvesf.com
+  slack:
+    enable: true
+    channels:
+      - https://hooks.slack.com/services/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
+      - https://hooks.slack.com/services/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
+  email:
+    enable: true
+    recipients:
+      - hiring@dwarvesf.com
 
 registry: hub.docker.com

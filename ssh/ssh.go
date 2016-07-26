@@ -99,14 +99,13 @@ func Run(command string, c Credential) (string, error) {
 	// Exec commands and write its output to log file
 	l.Info(c.Host + ": " + command)
 	response, err := executeCmd(command+" 2>&1 | tee -a var/log/shot.log", c.Host, c.Port, config)
+	if err != nil {
+		return "", err
+	}
 
 	// Print out response
 	if len(response) != 0 {
 		l.Info(fmt.Sprintf(c.Host + ": " + strings.TrimSpace(response)))
-	}
-
-	if err != nil {
-		return "", err
 	}
 
 	return response, nil

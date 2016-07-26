@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"strconv"
 	"strings"
@@ -10,6 +9,7 @@ import (
 	"github.com/dwarvesf/shot/config"
 	"github.com/dwarvesf/shot/dflog"
 	"github.com/dwarvesf/shot/ssh"
+	"github.com/dwarvesf/shot/utils"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 )
 
@@ -97,17 +97,46 @@ func Setup(configFile string) {
 	}
 }
 
-// Deploy
+// Deploy ...
 func Deploy(configFile string) {
-
 	cfg, err := config.Init(configFile)
 	if err != nil {
 		l.WithError(err).Fatal("Configuration file not found")
 	}
 
 	for _, t := range cfg.Targets {
-		for _, b := range t.Branches {
+		lf := dflog.Fields{"target": t.Host}
+		c := ssh.Credential{
+			User: t.User,
+			Host: t.Host,
+			Port: t.Port,
+		}
+		availablePort, err := ssh.Run("cat /opt/shot/port", c)
+		if err != nil {
+			l.WithFields(lf).Error(err)
+		}
+		port, err := strconv.Atoi(strings.TrimSpace(availablePort))
+		if err != nil {
+			l.WithFields(lf).WithError(err).Error("Cannot read port from file /opt/shot/port on server")
+			continue
+		}
 
+		checkContainerExists := fmt.Sprintf("docker ps -a | awk '{ print $1,$2 }' | grep %s/%s | awk '{print $2 }'", cfg.Registry, cfg.Project.Name)
+		res, err := ssh.Run(checkContainerExists, c)
+		if err != nil {
+			l.WithFields(lf).WithError(err).Error("Cannot execute commands")
+		}
+		if res == "" {
+			// this means no container is running, reset port to 8900
+			_, err := ssh.Run(`echo 8900 > /opt/shot/port || exit`, c)
+			if err != nil {
+				l.WithFields(lf).WithError(err).Error("Cannot write into /opt/shot/port")
+			}
+			port = 8900
+		}
+
+		for _, b := range t.Branches {
+			lf := dflog.Fields{"target": t.Host, "branch": b}
 			gco := fmt.Sprintf("git checkout %s", b)
 			imageName := fmt.Sprintf("%s/%s:%s", cfg.Registry, cfg.Project.Name, strings.Replace(b, "/", "-", -1))
 			dockerBuildCmd := fmt.Sprintf("docker build -t %s .", imageName)
@@ -115,63 +144,51 @@ func Deploy(configFile string) {
 
 			// Dockerize all containers
 			cmds := []string{gco, dockerBuildCmd, dockerPushCmd}
+			var err error
 			for _, cmd := range cmds {
-				_, _ = execCmd(cmd)
+				_, err = utils.ExecCmd(cmd)
+				if err != nil {
+					l.WithError(err).Error("Cannot run command: ", cmd)
+					break
+				}
 			}
-
-			c := ssh.Credential{
-				User: t.User,
-				Host: t.Host,
-				Port: t.Port,
-			}
-			availablePort, err := ssh.Run("cat /opt/shot/port", c)
 			if err != nil {
-				l.WithError(err).Error("Cannot read file port from server")
-				continue
-			}
-
-			port, err := strconv.Atoi(strings.TrimSpace(availablePort))
-			if err != nil {
-				l.WithError(err).Error("Cannot convert port to int")
+				l.WithFields(lf).WithError(err).Error("Cannot continue due to unexpected err")
 				continue
 			}
 
 			// Pull and run containers
 			dockerPullCmd := fmt.Sprintf("docker pull %s", imageName)
-			dockerRunCmd := fmt.Sprintf("docker run -d -p %s:%d %s", availablePort, cfg.Project.Port, imageName)
+			dockerRunCmd := fmt.Sprintf("docker run -d -p %d:%d --name %s %s", port, cfg.Project.Port, fmt.Sprintf("%s-%s", strings.Replace(cfg.Project.Name, "/", "-", -1), strings.Replace(b, "/", "-", -1)), imageName)
 			cmds = []string{dockerPullCmd, dockerRunCmd}
+			var cErr error
 			for _, cmd := range cmds {
-				_, err := ssh.Run(cmd, ssh.Credential{
+				_, cErr = ssh.Run(cmd, ssh.Credential{
 					User: t.User,
 					Host: t.Host,
 					Port: t.Port,
 				})
-				if err != nil {
-					l.WithError(err).Error("Cannot run command on target server")
+				if cErr != nil {
+					l.WithError(cErr).Error("Cannot run command on target server")
 					break
 				}
 			}
-
-			// Increase port count and replace to the file
-			port = port + 1
-
-			// Copy new port to target and remove file port from localhost
-			p := []byte(strconv.Itoa(port + 1))
-			err = ioutil.WriteFile("port", p, 0644)
-			if err != nil {
-				l.WithError(err).Error("Cannot write port to file")
+			if cErr != nil {
+				l.WithFields(lf).WithError(cErr).Error("Cannot run docker due to unexpected err")
 				continue
 			}
 
-			_, _ = execCmd(fmt.Sprintf("scp port %s@%s:/opt/shot/port", t.User, t.Host))
-			err = os.Remove("port")
+			// Rewrite port into file
+			port = port + 1
+			_, err = ssh.Run(fmt.Sprintf(`echo %d > /opt/shot/port || exit`, port), c)
 			if err != nil {
-				l.WithError(err).Error("Cannot remove file port")
+				l.WithFields(lf).WithError(err).Error("Cannot rewrite port into /opt/shot/port on server")
 			}
 		}
 	}
 }
 
+// Down ...
 func Down(configFile string) {
 
 	cfg, err := config.Init(configFile)
@@ -182,24 +199,30 @@ func Down(configFile string) {
 	for _, target := range cfg.Targets {
 		for _, branch := range target.Branches {
 
-			c := ssh.Credential{
+			// Remove related docker containers
+			dockerRemoveCmd := fmt.Sprintf("docker rm -f $(docker ps -a | grep %s)", branch)
+			_, err := ssh.Run(dockerRemoveCmd, ssh.Credential{
 				User: target.User,
 				Host: target.Host,
 				Port: target.Port,
-			}
-
-			// Remove related docker containers
-			dockerRemoveCmd := fmt.Sprintf("docker rm -f $(docker ps -a | grep %s)", branch)
-			_, err := ssh.Run(dockerRemoveCmd, c)
+			})
 			if err != nil {
 				l.WithError(err).Error("Cannot execute commands")
 			}
 
 			// Send notification
-			sendEmail()
+			if cfg.Notification.Email.Enable {
+				for _, r := range cfg.Notification.Email.Recipients {
+					utils.SendEmail(r)
+				}
+			}
 
 			// Post to Slack
-			postToSlack()
+			if cfg.Notification.Slack.Enable {
+				for _, c := range cfg.Notification.Slack.Channels {
+					utils.PostToSlack(c)
+				}
+			}
 		}
 	}
 }

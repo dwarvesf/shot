@@ -31,8 +31,20 @@ type Database struct {
 
 // Notification ...
 type Notification struct {
-	Slacks []string `yaml:"slacks"`
-	Emails []string `yaml:"emails"`
+	Slack Slack `yaml:"slack"`
+	Email Email `yaml:"email"`
+}
+
+// Slack ...
+type Slack struct {
+	Enable   bool     `yaml:"enable"`
+	Channels []string `yaml:"channels"`
+}
+
+// Email ...
+type Email struct {
+	Enable     bool     `yaml:"enable"`
+	Recipients []string `yaml:"recipients"`
 }
 
 // Config ...
