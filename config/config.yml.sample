@@ -1,0 +1,27 @@
+targets:
+  - host: 161.212.180.41
+    port: 22
+    user: root
+    branch:
+      - feature/login
+      - feature/register
+  - host: play.dwarvesf.com
+    port: 22
+    user: root
+    branch:
+      - feature/listing
+
+project:
+  name: amio/api
+  seed: sql/seed.sql
+  port: 8080
+
+notification:
+  slacks:
+  - https://hooks.slack.com/services/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
+    - https://hooks.slack.com/services/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
+  emails:
+    - ivkeanle@dwarvesf.com
+    - han@dwarvesf.com
+
+registry: hub.docker.com
