@@ -44,7 +44,21 @@ type Slack struct {
 // Email ...
 type Email struct {
 	Enable     bool     `yaml:"enable"`
+	SMTP       SMTP     `yaml:"smtp"`
 	Recipients []string `yaml:"recipients"`
+}
+
+// SMTP ...
+type SMTP struct {
+	Domain         string `yaml:"domain"`
+	Host           string `yaml:"host"`
+	Port           int    `yaml:"port"`
+	User           string `yaml:"user"`
+	Pass           string `yaml:"pass"`
+	StartTLS       bool   `yaml:"starttls"`
+	Authentication string `yaml:"authentication"`
+	FromName       string `yaml:"from_name"`
+	FromEmail      string `yaml:"from_email"`
 }
 
 // Config ...

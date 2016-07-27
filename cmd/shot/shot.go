@@ -159,7 +159,7 @@ func Deploy(configFile string) {
 
 			// Pull and run containers
 			dockerPullCmd := fmt.Sprintf("docker pull %s", imageName)
-			dockerRunCmd := fmt.Sprintf("docker run -d -p %d:%d --name %s %s", port, cfg.Project.Port, fmt.Sprintf("%s-%s", strings.Replace(cfg.Project.Name, "/", "-", -1), strings.Replace(b, "/", "-", -1)), imageName)
+			dockerRunCmd := fmt.Sprintf("docker run -d -p %d:%d --name %s %s", port, cfg.Project.Port, fmt.Sprintf("%s__%s", strings.Replace(cfg.Project.Name, "/", "-", -1), strings.Replace(b, "/", "-", -1)), imageName)
 			cmds = []string{dockerPullCmd, dockerRunCmd}
 			var cErr error
 			for _, cmd := range cmds {
@@ -184,6 +184,29 @@ func Deploy(configFile string) {
 			if err != nil {
 				l.WithFields(lf).WithError(err).Error("Cannot rewrite port into /opt/shot/port on server")
 			}
+
+			// Send notification
+			message := fmt.Sprintf("Deployed (%s:%s) to server %s", cfg.Project.Name, b, t.Host)
+			if cfg.Notification.Email.Enable {
+				for _, r := range cfg.Notification.Email.Recipients {
+					l.Info("Sending mail to ", r)
+					err := utils.SendMail(r, fmt.Sprintf("Deployed %s to server with PR %s", cfg.Project.Name, b), message, cfg)
+					if err != nil {
+						l.WithFields(lf).WithError(err).Error("Cannot send mail to ", r)
+					}
+				}
+			}
+
+			// Post to Slack
+			if cfg.Notification.Slack.Enable {
+				for _, c := range cfg.Notification.Slack.Channels {
+					l.Info("Posting to Slack channel ", c)
+					err := utils.PostToSlack(c, message)
+					if err != nil {
+						l.WithFields(lf).WithError(err).Error("Cannot post to channel ", c)
+					}
+				}
+			}
 		}
 	}
 }
@@ -196,31 +219,43 @@ func Down(configFile string) {
 		l.WithError(err).Fatal("Configuration file not found")
 	}
 
-	for _, target := range cfg.Targets {
-		for _, branch := range target.Branches {
+	for _, t := range cfg.Targets {
+		for _, b := range t.Branches {
 
 			// Remove related docker containers
-			dockerRemoveCmd := fmt.Sprintf("docker rm -f $(docker ps -a | grep %s)", branch)
+			checkContainerExists := fmt.Sprintf("docker ps -a | awk '{ print $1,$2 }' | grep %s/%s:%s | awk '{print $1 }'", cfg.Registry, cfg.Project.Name)
+			imageName := fmt.Sprintf("%s/%s:%s", cfg.Registry, cfg.Project.Name, strings.Replace(b, "/", "-", -1))
+			dockerRemoveCmd := fmt.Sprintf("docker rm -f $(docker ps -a | grep %s)", imageName)
 			_, err := ssh.Run(dockerRemoveCmd, ssh.Credential{
-				User: target.User,
-				Host: target.Host,
-				Port: target.Port,
+				User: t.User,
+				Host: t.Host,
+				Port: t.Port,
 			})
 			if err != nil {
 				l.WithError(err).Error("Cannot execute commands")
 			}
 
 			// Send notification
+			// Send mail
+			message := fmt.Sprintf("Shutdown (%s:%s) from server %s", cfg.Project.Name, b, t.Host)
 			if cfg.Notification.Email.Enable {
 				for _, r := range cfg.Notification.Email.Recipients {
-					utils.SendEmail(r)
+					l.Info("Sending mail to ", r)
+					err := utils.SendMail(r, fmt.Sprintf("Shutdown server with PR %s", b), message, cfg)
+					if err != nil {
+						l.WithError(err).Error("Can not send mail")
+					}
 				}
 			}
 
 			// Post to Slack
 			if cfg.Notification.Slack.Enable {
 				for _, c := range cfg.Notification.Slack.Channels {
-					utils.PostToSlack(c)
+					l.Info("Posting to Slack channel ", c)
+					err := utils.PostToSlack(c, message)
+					if err != nil {
+						l.WithError(err).Error("Cannot post to channel ", c)
+					}
 				}
 			}
 		}

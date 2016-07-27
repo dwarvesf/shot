@@ -28,6 +28,16 @@ notification:
       - https://hooks.slack.com/services/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
   email:
     enable: true
+    smtp:
+      domain: dwarvesf.com
+      host: smtp.gmail.com
+      port: 587
+      user: hiring@dwarvesf.com
+      pass: ourpassword
+      starttls: true
+      authentication: login
+      from_name: devops
+      from_email: devops@dwarvesf.com
     recipients:
       - hiring@dwarvesf.com
 
