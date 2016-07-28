@@ -21,8 +21,63 @@ type Fields map[string]interface{}
 
 // Logger wraps logrus.Logger
 type Logger struct {
-	lg *log.Logger
+	lg        *log.Logger
+	DebugMode bool
 }
+
+// Level type
+type Level uint8
+
+// Convert the Level to a string. E.g. PanicLevel becomes "panic".
+func (level Level) String() string {
+	switch level {
+	case DebugLevel:
+		return "debug"
+	case InfoLevel:
+		return "info"
+	case WarnLevel:
+		return "warning"
+	case ErrorLevel:
+		return "error"
+	case FatalLevel:
+		return "fatal"
+	case PanicLevel:
+		return "panic"
+	}
+
+	return "unknown"
+}
+
+// AllLevels is constants exposing all logging levels
+var AllLevels = []Level{
+	PanicLevel,
+	FatalLevel,
+	ErrorLevel,
+	WarnLevel,
+	InfoLevel,
+	DebugLevel,
+}
+
+// These are the different logging levels. You can set the logging level to log
+// on your instance of logger, obtained with `logrus.New()`.
+const (
+	// PanicLevel level, highest level of severity. Logs and then calls panic with the
+	// message passed to Debug, Info, ...
+	PanicLevel Level = iota
+	// FatalLevel level. Logs and then calls `os.Exit(1)`. It will exit even if the
+	// logging level is set to Panic.
+	FatalLevel
+	// ErrorLevel level. Logs. Used for errors that should definitely be noted.
+	// Commonly used for hooks to send errors to an error tracking service.
+	ErrorLevel
+	// WarnLevel level. Non-critical entries that deserve eyes.
+	WarnLevel
+	// InfoLevel level. General operational entries about what's going on inside the
+	// application.
+	InfoLevel
+	// DebugLevel level. Usually only enabled when debugging. Very verbose logging.
+	DebugLevel
+)
 
 // Entry wraps logrus.Entry
 type Entry struct {
@@ -37,7 +92,7 @@ func init() {
 // New creates new Logger.
 func New() Logger {
 	logger := log.New()
-	return Logger{logger}
+	return Logger{logger, false}
 }
 
 // 2015-06-10 20:10:08.123456
@@ -255,6 +310,39 @@ func (l Logger) Fatalln(args ...interface{}) {
 // Panicln implements logrus Panicln.
 func (l Logger) Panicln(args ...interface{}) {
 	l.lg.WithFields(getInfo()).Panicln(args...)
+}
+
+// Log implements logrus Panicln.
+func (l Logger) Log(level Level, msg string, err error, fields Fields) {
+	if l.DebugMode {
+		switch level {
+		case PanicLevel:
+			l.WithFields(fields).WithError(err).Panic(msg)
+		case FatalLevel:
+			l.WithFields(fields).WithError(err).Fatal(msg)
+		case ErrorLevel:
+			l.WithFields(fields).WithError(err).Error(msg)
+		case WarnLevel:
+			l.WithFields(fields).WithError(err).Warn(msg)
+		case InfoLevel:
+			l.WithFields(fields).WithError(err).Info(msg)
+		case DebugLevel:
+			l.WithFields(fields).WithError(err).Debug(msg)
+		}
+	} else {
+		switch level {
+		case PanicLevel:
+			l.Panic(msg)
+		case FatalLevel:
+			l.Fatal(msg)
+		case ErrorLevel:
+			l.Error(msg)
+		case WarnLevel:
+			l.Warn(msg)
+		case InfoLevel:
+			l.Info(msg)
+		}
+	}
 }
 
 // WithField implements logrus Entry WithField.
